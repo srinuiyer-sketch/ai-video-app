@@ -31,7 +31,7 @@ target_language = st.sidebar.selectbox(
     ["English", "Hindi (हिन्दी)", "Spanish (Español)", "French (Français)", "German (Deutsch)", "Japanese (日本語)", "Arabic (العربية)"]
 )
 
-# Custom Voice Selector for Text-to-Speech
+# Custom Voice Selector with a Custom Input Option
 voice_options = {
     "English (US - Female: Aria)": "en-US-AriaNeural",
     "English (US - Male: Andrew)": "en-US-AndrewNeural",
@@ -43,11 +43,16 @@ voice_options = {
     "French (France - Female: Denise)": "fr-FR-DeniseNeural",
     "German (Germany - Female: Katja)": "de-DE-KatjaNeural",
     "Japanese (Japan - Female: Nanami)": "ja-JP-NanamiNeural",
-    "Arabic (Egypt - Female: Salma)": "ar-EG-SalmaNeural"
+    "Arabic (Egypt - Female: Salma)": "ar-EG-SalmaNeural",
+    "✨ Custom Voice ID (Type Below)": "custom"
 }
 
 selected_voice_label = st.sidebar.selectbox("Select Voice Profile", list(voice_options.keys()))
-selected_voice_id = voice_options[selected_voice_label]
+
+if selected_voice_label == "✨ Custom Voice ID (Type Below)":
+    selected_voice_id = st.sidebar.text_input("Enter exact edge-tts Voice ID", value="en-US-ChristopherNeural")
+else:
+    selected_voice_id = voice_options[selected_voice_label]
 
 # Main user inputs
 uploaded_file = st.file_uploader(
@@ -122,9 +127,9 @@ if st.button("Generate Content Pipeline", type="primary"):
                 {content_text}
                 """
                 
-                # Automatic Fallback mechanism for high traffic
+                # Robust Multi-Model Fallback rotation
                 response = None
-                models_to_try = ["gemini-3.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+                models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
                 
                 for model_name in models_to_try:
                     try:
@@ -142,7 +147,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                     st.markdown("### 📝 Results Output")
                     st.write(response.text)
                     
-                    # Save generated text into session state so we can generate audio separately
+                    # Save generated text into session state for audio generation
                     st.session_state["generated_script"] = response.text
                 else:
                     st.error("All available Gemini models are currently experiencing high server traffic. Please try again in a moment.")
@@ -154,7 +159,7 @@ if st.button("Generate Content Pipeline", type="primary"):
 if "generated_script" in st.session_state and st.session_state["generated_script"]:
     st.markdown("---")
     st.subheader("🎙️ Voiceover Audio Generator")
-    st.markdown(f"Convert your script narration into a realistic MP3 voiceover using **{selected_voice_label}**.")
+    st.markdown(f"Convert your script narration into a realistic MP3 voiceover using voice ID: `{selected_voice_id}`.")
     
     if st.button("Generate & Download Voiceover MP3"):
         with st.spinner("Synthesizing lifelike speech audio..."):
@@ -163,10 +168,10 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
                     tmp_path = tmp_file.name
                 
-                # Run edge-tts to generate the audio file using the selected voice profile
+                # Run edge-tts to generate the audio file
                 asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_path))
                 
-                # Read audio file bytes to display player and download button
+                # Read audio bytes for player and download button
                 with open(tmp_path, "rb") as audio_file:
                     audio_bytes = audio_file.read()
                 
