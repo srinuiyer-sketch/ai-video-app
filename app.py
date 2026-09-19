@@ -4,6 +4,9 @@ from pptx import Presentation
 import PyPDF2
 from docx import Document
 import io
+import asyncio
+import edge_tts
+import tempfile
 
 # Page configuration
 st.set_page_config(
@@ -13,7 +16,7 @@ st.set_page_config(
 )
 
 st.title("🚀 AI Multi-Format Content & Video Engine")
-st.markdown("Upload any document or notes to generate ultra-realistic, human-sounding video scripts and posts.")
+st.markdown("Upload any document or notes to generate human-grade video scripts, posts, and downloadable audio voiceovers.")
 
 # Automatically fetch API key from Streamlit Cloud Secrets securely
 try:
@@ -21,12 +24,30 @@ try:
 except Exception:
     api_key = None
 
-# Sidebar for Localization (Language Selection Only)
-st.sidebar.header("Localization")
+# Sidebar Configuration
+st.sidebar.header("Localization & Audio")
 target_language = st.sidebar.selectbox(
     "Output Language",
     ["English", "Hindi (हिन्दी)", "Spanish (Español)", "French (Français)", "German (Deutsch)", "Japanese (日本語)", "Arabic (العربية)"]
 )
+
+# Custom Voice Selector for Text-to-Speech
+voice_options = {
+    "English (US - Female: Aria)": "en-US-AriaNeural",
+    "English (US - Male: Andrew)": "en-US-AndrewNeural",
+    "English (UK - Female: Sonia)": "en-GB-SoniaNeural",
+    "English (UK - Male: Ryan)": "en-GB-RyanNeural",
+    "Hindi (India - Female: Swara)": "hi-IN-SwaraNeural",
+    "Hindi (India - Male: Madhur)": "hi-IN-MadhurNeural",
+    "Spanish (Spain - Female: Elvira)": "es-ES-ElviraNeural",
+    "French (France - Female: Denise)": "fr-FR-DeniseNeural",
+    "German (Germany - Female: Katja)": "de-DE-KatjaNeural",
+    "Japanese (Japan - Female: Nanami)": "ja-JP-NanamiNeural",
+    "Arabic (Egypt - Female: Salma)": "ar-EG-SalmaNeural"
+}
+
+selected_voice_label = st.sidebar.selectbox("Select Voice Profile", list(voice_options.keys()))
+selected_voice_id = voice_options[selected_voice_label]
 
 # Main user inputs
 uploaded_file = st.file_uploader(
@@ -34,6 +55,11 @@ uploaded_file = st.file_uploader(
     type=["txt", "pdf", "docx", "pptx", "md"]
 )
 user_prompt = st.text_area("Or type/paste your topic or raw notes here:")
+
+# Helper function to run edge-tts asynchronously in Streamlit
+async def generate_tts_audio(text_content, voice_name, output_filename):
+    communicate = edge_tts.Communicate(text_content, voice_name)
+    await communicate.save(output_filename)
 
 if st.button("Generate Content Pipeline", type="primary"):
     if not api_key:
@@ -115,8 +141,42 @@ if st.button("Generate Content Pipeline", type="primary"):
                     st.success(f"Human-Grade Content Generated Successfully in {target_language}!")
                     st.markdown("### 📝 Results Output")
                     st.write(response.text)
+                    
+                    # Save generated text into session state so we can generate audio separately
+                    st.session_state["generated_script"] = response.text
                 else:
                     st.error("All available Gemini models are currently experiencing high server traffic. Please try again in a moment.")
                 
             except Exception as e:
                 st.error(f"An error occurred while processing your file: {e}")
+
+# If content has been generated, provide an audio generation section
+if "generated_script" in st.session_state and st.session_state["generated_script"]:
+    st.markdown("---")
+    st.subheader("🎙️ Voiceover Audio Generator")
+    st.markdown(f"Convert your script narration into a realistic MP3 voiceover using **{selected_voice_label}**.")
+    
+    if st.button("Generate & Download Voiceover MP3"):
+        with st.spinner("Synthesizing lifelike speech audio..."):
+            try:
+                # Create a temporary file to store the audio
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                    tmp_path = tmp_file.name
+                
+                # Run edge-tts to generate the audio file using the selected voice profile
+                asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_path))
+                
+                # Read audio file bytes to display player and download button
+                with open(tmp_path, "rb") as audio_file:
+                    audio_bytes = audio_file.read()
+                
+                st.audio(audio_bytes, format="audio/mp3")
+                st.download_button(
+                    label="📥 Download Voiceover (.mp3)",
+                    data=audio_bytes,
+                    file_name="ai_voiceover.mp3",
+                    mime="audio/mp3"
+                )
+                st.success("Voiceover generated successfully!")
+            except Exception as tts_error:
+                st.error(f"Error generating audio: {tts_error}")
