@@ -13,13 +13,22 @@ st.set_page_config(
 )
 
 st.title("🚀 AI Multi-Format Content & Video Engine")
-st.markdown("Upload any document (TXT, PDF, Word, PPTX, MD) or notes to instantly generate YouTube scripts and LinkedIn posts.")
+st.markdown("Upload any document or notes to generate ultra-realistic, human-sounding video scripts and posts.")
 
-# Sidebar for API configuration
-st.sidebar.header("Configuration")
-api_key = st.sidebar.text_input("Enter your Google AI Studio API Key", type="password")
+# Automatically fetch API key from Streamlit Cloud Secrets securely
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    api_key = None
 
-# Main user inputs - expanded file support
+# Sidebar for Localization (Language Selection Only)
+st.sidebar.header("Localization")
+target_language = st.sidebar.selectbox(
+    "Output Language",
+    ["English", "Hindi (हिन्दी)", "Spanish (Español)", "French (Français)", "German (Deutsch)", "Japanese (日本語)", "Arabic (العربية)"]
+)
+
+# Main user inputs
 uploaded_file = st.file_uploader(
     "Upload your source file (TXT, PDF, DOCX, PPTX, MD)", 
     type=["txt", "pdf", "docx", "pptx", "md"]
@@ -28,11 +37,11 @@ user_prompt = st.text_area("Or type/paste your topic or raw notes here:")
 
 if st.button("Generate Content Pipeline", type="primary"):
     if not api_key:
-        st.error("Please enter your Google AI Studio API key in the sidebar.")
+        st.error("API key not found in Streamlit Secrets! Please verify your settings.")
     elif not uploaded_file and not user_prompt:
         st.warning("Please upload a file or enter some text to begin.")
     else:
-        with st.spinner("AI is analyzing your file and writing cross-platform content..."):
+        with st.spinner(f"AI is analyzing your file and crafting a human-like script in {target_language}..."):
             try:
                 client = genai.Client(api_key=api_key)
                 
@@ -40,11 +49,8 @@ if st.button("Generate Content Pipeline", type="primary"):
                 if uploaded_file is not None:
                     file_extension = uploaded_file.name.split(".")[-1].lower()
                     
-                    # 1. Text & Markdown files
                     if file_extension in ["txt", "md"]:
                         content_text = uploaded_file.read().decode("utf-8", errors="ignore")
-                    
-                    # 2. PDF files
                     elif file_extension == "pdf":
                         pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
                         pdf_texts = []
@@ -53,14 +59,10 @@ if st.button("Generate Content Pipeline", type="primary"):
                             if text:
                                 pdf_texts.append(f"--- Page {page_num} ---\n{text}")
                         content_text = "\n".join(pdf_texts)
-                    
-                    # 3. Word documents (.docx)
                     elif file_extension == "docx":
                         doc = Document(io.BytesIO(uploaded_file.read()))
                         doc_texts = [para.text for para in doc.paragraphs if para.text.strip()]
                         content_text = "\n".join(doc_texts)
-                    
-                    # 4. PowerPoint presentations (.pptx)
                     elif file_extension == "pptx":
                         prs = Presentation(io.BytesIO(uploaded_file.read()))
                         slide_texts = []
@@ -76,21 +78,30 @@ if st.button("Generate Content Pipeline", type="primary"):
                     content_text = user_prompt
 
                 prompt = f"""
-                Analyze the following content from the uploaded file and generate:
-                1. A viral LinkedIn post with a strong hook and relevant hashtags.
-                2. A long-form YouTube script divided clearly into visual cues and voiceover narration.
-                3. A punchy 30-second YouTube Short script.
+                You are an elite, top 1% human content creator, documentary filmmaker, and expert copywriter. Your job is to transform the provided source content into an ultra-engaging, completely human-sounding script and post.
+
+                CRITICAL ANTI-AI WRITING RULES:
+                1. NEVER use cliché AI filler words such as: "delve", "tapestry", "testament", "beacon", "game-changer", "in conclusion", "dive deep", "revolutionize", "unleash", or "it's important to note".
+                2. Write like a real human speaks to a friend or an audience on camera. Use natural speech cadences, contractions (don't, won't, it's, you're), rhetorical questions, and occasional conversational transitions ("Look,", "Here's the thing,", "Now,").
+                3. The voiceover narration must sound spoken, not written. Avoid overly complex academic sentences; keep the rhythm punchy, variable, and engaging for text-to-speech audio generation.
                 
-                Content to process:
+                LANGUAGE REQUIREMENT: The entire output must be written fluently in **{target_language}**.
+
+                Generate:
+                1. A viral LinkedIn post with a sharp, thumb-stopping hook, crisp spacing, zero corporate jargon, and relevant hashtags.
+                2. A long-form YouTube script divided into clear visual cues and voiceover narration formatted specifically for clean audio flow.
+                3. A punchy 30-second YouTube Short / Reel script with immediate pattern-interrupt pacing.
+                
+                Source Content to process:
                 {content_text}
                 """
                 
                 response = client.models.generate_content(
-                   model="gemini-3.5-flash",
+                    model="gemini-3.5-flash",
                     contents=prompt,
                 )
                 
-                st.success("Content Generated Successfully!")
+                st.success(f"Human-Grade Content Generated Successfully in {target_language}!")
                 st.markdown("### 📝 Results Output")
                 st.write(response.text)
                 
