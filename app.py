@@ -96,14 +96,27 @@ if st.button("Generate Content Pipeline", type="primary"):
                 {content_text}
                 """
                 
-                response = client.models.generate_content(
-                    model="gemini-3.5-flash",
-                    contents=prompt,
-                )
+                # Automatic Fallback mechanism for high traffic
+                response = None
+                models_to_try = ["gemini-3.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
                 
-                st.success(f"Human-Grade Content Generated Successfully in {target_language}!")
-                st.markdown("### 📝 Results Output")
-                st.write(response.text)
+                for model_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt,
+                        )
+                        if response and response.text:
+                            break
+                    except Exception:
+                        continue
+                
+                if response and response.text:
+                    st.success(f"Human-Grade Content Generated Successfully in {target_language}!")
+                    st.markdown("### 📝 Results Output")
+                    st.write(response.text)
+                else:
+                    st.error("All available Gemini models are currently experiencing high server traffic. Please try again in a moment.")
                 
             except Exception as e:
                 st.error(f"An error occurred while processing your file: {e}")
