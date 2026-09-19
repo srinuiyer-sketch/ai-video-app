@@ -4,6 +4,7 @@ from pptx import Presentation
 import PyPDF2
 from docx import Document
 import io
+import time
 import asyncio
 import edge_tts
 import tempfile
@@ -127,20 +128,25 @@ if st.button("Generate Content Pipeline", type="primary"):
                 {content_text}
                 """
                 
-                # Robust Multi-Model Fallback rotation
+                # Robust Retry & Fallback Loop (Handles 503 traffic spikes automatically)
                 response = None
                 models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
                 
                 for model_name in models_to_try:
-                    try:
-                        response = client.models.generate_content(
-                            model=model_name,
-                            contents=prompt,
-                        )
-                        if response and response.text:
-                            break
-                    except Exception:
-                        continue
+                    success = False
+                    for attempt in range(3):  # Try each model up to 3 times with a short pause
+                        try:
+                            response = client.models.generate_content(
+                                model=model_name,
+                                contents=prompt,
+                            )
+                            if response and response.text:
+                                success = True
+                                break
+                        except Exception:
+                            time.sleep(2)  # Wait 2 seconds before retrying
+                    if success:
+                        break
                 
                 if response and response.text:
                     st.success(f"Human-Grade Content Generated Successfully in {target_language}!")
@@ -150,7 +156,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                     # Save generated text into session state for audio generation
                     st.session_state["generated_script"] = response.text
                 else:
-                    st.error("All available Gemini models are currently experiencing high server traffic. Please try again in a moment.")
+                    st.error("Server traffic is currently high. Please click 'Generate Content Pipeline' again in 5 seconds.")
                 
             except Exception as e:
                 st.error(f"An error occurred while processing your file: {e}")
