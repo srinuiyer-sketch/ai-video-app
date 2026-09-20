@@ -128,9 +128,9 @@ if st.button("Generate Content Pipeline", type="primary"):
                 {content_text}
                 """
                 
-                # Use gemini-2.0-flash as the primary production-stable model
+                # Updated high-capacity production model rotation
                 response = None
-                models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+                models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
                 
                 for model_name in models_to_try:
                     success = False
@@ -144,7 +144,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                                 success = True
                                 break
                         except Exception:
-                            time.sleep(1.5)
+                            time.sleep(1)
                     if success:
                         break
                 
@@ -156,7 +156,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                     # Save generated text into session state for audio generation
                     st.session_state["generated_script"] = response.text
                 else:
-                    st.error("Server traffic is currently high on Google's free tier. Please try again in a few seconds.")
+                    st.error("Server traffic is currently high. Please try again in a few seconds.")
                 
             except Exception as e:
                 st.error(f"An error occurred while processing your file: {e}")
