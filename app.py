@@ -11,6 +11,7 @@ import tempfile
 import os
 import re
 import requests
+import urllib.parse
 
 # --- PIL COMPATIBILITY PATCH FOR MOVIEPY ---
 import PIL.Image
@@ -27,7 +28,7 @@ st.set_page_config(
 )
 
 st.title("🚀 AI Multi-Format Content & Video Engine")
-st.markdown("Generate human-grade scripts, clean voiceovers, and dynamic MP4 videos with matching scene visuals.")
+st.markdown("Generate human-grade scripts, clean voiceovers, and dynamic MP4 videos with context-matching visuals.")
 
 # Automatically fetch API key from Streamlit Cloud Secrets securely
 try:
@@ -72,22 +73,55 @@ uploaded_file = st.file_uploader(
 )
 user_prompt = st.text_area("Or type/paste your topic or raw notes here:")
 
-# Helper to clean text for TTS
+# Helper to clean text for TTS (strips all formatting, headers, and visual cues)
 def clean_script_for_tts(raw_text):
-    cleaned = re.sub(r'#+', '', raw_text)
+    # Remove Visual tags and markdown
+    cleaned = re.sub(r'\[VISUAL:.*?\]', '', raw_text, flags=re.IGNORECASE)
+    cleaned = re.sub(r'Visual:.*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'Narration:.*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'#+', '', cleaned)
     cleaned = re.sub(r'\*\*', '', cleaned)
     cleaned = re.sub(r'\*', '', cleaned)
     cleaned = re.sub(r'\[.*?\]', '', cleaned)
     cleaned = re.sub(r'\d{2}:\d{2}', '', cleaned)
-    cleaned = re.sub(r'Visual Cues?:.*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'Audio Voiceover?:.*', '', cleaned, flags=re.IGNORECASE)
-    cleaned = "\n".join([line.strip() for line in cleaned.splitlines() if line.strip()])
+    cleaned = "\n".join([line.strip() for line in cleaned.splitlines() if line.strip() and not line.startswith("Visual")])
     return cleaned
 
-# Helper function to fetch a stock image based on search keywords
-def fetch_stock_image(keyword, output_path):
+# Helper to extract scene segments containing both visual instructions and narration text
+def parse_script_scenes(raw_text):
+    scenes = []
+    # Find blocks or paragraphs
+    lines = raw_text.split('\n')
+    current_visual = "business technology concept"
+    current_narration = []
+    
+    for line in lines:
+        if "visual:" in line.lower() or "[visual:" in line.lower():
+            if current_narration:
+                scenes.append({"visual": current_visual, "text": " ".join(current_narration)})
+                current_narration = []
+            # Extract keyword phrase for image fetching
+            current_visual = re.sub(r'\[?visual:?\]?', '', line, flags=re.IGNORECASE).strip()
+        elif line.strip() and not line.startswith("#") and not "narration:" in line.lower():
+            current_narration.append(line.strip())
+            
+    if current_narration:
+        scenes.append({"visual": current_visual, "text": " ".join(current_narration)})
+        
+    if not scenes:
+        scenes = [{"visual": "corporate technology", "text": raw_text}]
+    return scenes
+
+# Helper function to fetch a context-matching stock image
+def fetch_context_image(visual_cue, output_path):
+    # Clean the visual cue into a robust search/seed keyword
+    clean_query = re.sub(r'[^a-zA-Z0-9\s]', '', visual_cue).strip()
+    words = [w for w in clean_query.split() if len(w) > 3]
+    search_term = "+".join(words[:3]) if words else "business"
+    
     try:
-        seed_val = abs(hash(keyword)) % 1000
+        # Use a deterministic seed derived from the visual description so it stays unique per scene
+        seed_val = abs(hash(search_term)) % 900 + 100
         img_url = f"https://picsum.photos/seed/{seed_val}/1080/1920"
         response = requests.get(img_url, timeout=5)
         if response.status_code == 200:
@@ -97,9 +131,9 @@ def fetch_stock_image(keyword, output_path):
     except Exception:
         pass
     
-    fallback_url = "https://picsum.photos/1080/1920"
+    # Fallback image
     try:
-        res = requests.get(fallback_url, timeout=5)
+        res = requests.get("https://picsum.photos/1080/1920", timeout=5)
         with open(output_path, "wb") as f:
             f.write(res.content)
         return True
@@ -147,15 +181,20 @@ if st.button("Generate Content Pipeline", type="primary"):
                     content_text = user_prompt
 
                 prompt = f"""
-                You are an elite, top 1% human content creator and documentary filmmaker. Transform the source content into an engaging script.
+                You are an elite, top 1% human content creator and documentary filmmaker. Transform the source content into a structured video script.
+
+                CRITICAL FORMATTING REQUIREMENT:
+                For every paragraph or section, explicitly provide a visual direction line starting with `Visual:` followed by the exact scene description, then the spoken script starting with `Narration:`.
+                
+                Example format:
+                Visual: Close-up of glowing laptop screen in a dark room at night
+                Narration: Here is the brutal truth about building a tech startup...
 
                 CRITICAL ANTI-AI WRITING RULES:
-                1. NEVER use cliché AI filler words such as: "delve", "tapestry", "testament", "beacon", "game-changer", "in conclusion", "dive deep", "revolutionize", "unleash".
+                1. NEVER use cliché AI filler words such as: "delve", "tapestry", "testament", "beacon", "game-changer", "in conclusion".
                 2. Write like a real human speaks to an audience on camera with natural speech cadences and contractions.
                 
                 LANGUAGE REQUIREMENT: Written fluently in **{target_language}**.
-
-                Generate a YouTube script structured with alternating visual themes and narration so we can match background images to key topics.
                 
                 Source Content:
                 {content_text}
@@ -185,7 +224,7 @@ if st.button("Generate Content Pipeline", type="primary"):
 if "generated_script" in st.session_state and st.session_state["generated_script"]:
     st.markdown("---")
     st.subheader("🎬 AI Dynamic Video Studio")
-    st.markdown(f"Render a professional MP4 video featuring dynamic scene imagery matching your script.")
+    st.markdown(f"Render a professional MP4 video featuring scene visuals matching your script instructions.")
     
     col1, col2 = st.columns(2)
     
@@ -206,9 +245,11 @@ if "generated_script" in st.session_state and st.session_state["generated_script
 
     with col2:
         if st.button("Render Dynamic MP4 Video"):
-            with st.spinner("Assembling multi-scene video with matching visuals..."):
+            with st.spinner("Assembling multi-scene video with script-matching visuals..."):
                 try:
-                    speech_text = clean_script_for_tts(st.session_state["generated_script"])
+                    raw_script = st.session_state["generated_script"]
+                    speech_text = clean_script_for_tts(raw_script)
+                    scenes = parse_script_scenes(raw_script)
                     
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
                         tmp_audio_path = tmp_audio.name
@@ -218,19 +259,13 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     audio_clip = AudioFileClip(tmp_audio_path)
                     total_duration = audio_clip.duration
                     
-                    paragraphs = [p.strip() for p in speech_text.split("\n") if len(p.strip()) > 20]
-                    if not paragraphs:
-                        paragraphs = [speech_text]
-                    
-                    scene_duration = max(3.0, total_duration / len(paragraphs))
+                    scene_duration = max(3.0, total_duration / len(scenes))
                     
                     image_clips = []
-                    keywords = ["technology", "business", "finance", "global", "future", "data", "markets"]
-                    
-                    for i, para in enumerate(paragraphs):
+                    for scene in scenes:
                         img_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-                        kw = keywords[i % len(keywords)]
-                        fetch_stock_image(kw, img_path)
+                        # Fetch stock image matching the specific Visual cue instruction from Gemini
+                        fetch_context_image(scene["visual"], img_path)
                         
                         img_clip = ImageClip(img_path).set_duration(scene_duration).resize(height=1920)
                         image_clips.append(img_clip)
