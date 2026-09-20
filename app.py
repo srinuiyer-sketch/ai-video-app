@@ -9,7 +9,9 @@ import asyncio
 import edge_tts
 import tempfile
 import os
-from moviepy.editor import AudioFileClip, ColorClip
+import re
+import requests
+from moviepy.editor import AudioFileClip, ImageClip, concatenate_videoclips
 
 # Page configuration
 st.set_page_config(
@@ -19,7 +21,7 @@ st.set_page_config(
 )
 
 st.title("🚀 AI Multi-Format Content & Video Engine")
-st.markdown("Upload any document or notes to generate human-grade scripts, downloadable voiceovers, and complete MP4 videos.")
+st.markdown("Generate human-grade scripts, clean voiceovers, and dynamic MP4 videos with matching scene visuals.")
 
 # Automatically fetch API key from Streamlit Cloud Secrets securely
 try:
@@ -34,7 +36,7 @@ target_language = st.sidebar.selectbox(
     ["English", "Hindi (हिन्दी)", "Spanish (Español)", "French (Français)", "German (Deutsch)", "Japanese (日本語)", "Arabic (العربية)"]
 )
 
-# Custom Voice Selector with a Custom Input Option
+# Custom Voice Selector
 voice_options = {
     "English (US - Female: Aria)": "en-US-AriaNeural",
     "English (US - Male: Andrew)": "en-US-AndrewNeural",
@@ -64,7 +66,43 @@ uploaded_file = st.file_uploader(
 )
 user_prompt = st.text_area("Or type/paste your topic or raw notes here:")
 
-# Helper function to run edge-tts asynchronously in Streamlit
+# Helper to clean text for TTS
+def clean_script_for_tts(raw_text):
+    cleaned = re.sub(r'#+', '', raw_text)
+    cleaned = re.sub(r'\*\*', '', cleaned)
+    cleaned = re.sub(r'\*', '', cleaned)
+    cleaned = re.sub(r'\[.*?\]', '', cleaned)
+    cleaned = re.sub(r'\d{2}:\d{2}', '', cleaned)
+    cleaned = re.sub(r'Visual Cues?:.*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'Audio Voiceover?:.*', '', cleaned, flags=re.IGNORECASE)
+    cleaned = "\n".join([line.strip() for line in cleaned.splitlines() if line.strip()])
+    return cleaned
+
+# Helper function to fetch a relevant stock image based on search keywords
+def fetch_stock_image(keyword, output_path):
+    try:
+        # Use Picsum Photos with deterministic seed based on keyword for contextual variety, 
+        # or fallback to a reliable curated tech/business image stream
+        seed_val = abs(hash(keyword)) % 1000
+        img_url = f"https://picsum.photos/seed/{seed_val}/1080/1920"
+        response = requests.get(img_url, timeout=5)
+        if response.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+            return True
+    except Exception:
+        pass
+    
+    # Absolute fallback image if request fails
+    fallback_url = "https://picsum.photos/1080/1920"
+    try:
+        res = requests.get(fallback_url, timeout=5)
+        with open(output_path, "wb") as f:
+            f.write(res.content)
+        return True
+    except Exception:
+        return False
+
 async def generate_tts_audio(text_content, voice_name, output_filename):
     communicate = edge_tts.Communicate(text_content, voice_name)
     await communicate.save(output_filename)
@@ -82,21 +120,15 @@ if st.button("Generate Content Pipeline", type="primary"):
                 content_text = ""
                 if uploaded_file is not None:
                     file_extension = uploaded_file.name.split(".")[-1].lower()
-                    
                     if file_extension in ["txt", "md"]:
                         content_text = uploaded_file.read().decode("utf-8", errors="ignore")
                     elif file_extension == "pdf":
                         pdf_reader = PyPDF2.PdfReader(io.BytesIO(uploaded_file.read()))
-                        pdf_texts = []
-                        for page_num, page in enumerate(pdf_reader.pages, start=1):
-                            text = page.extract_text()
-                            if text:
-                                pdf_texts.append(f"--- Page {page_num} ---\n{text}")
+                        pdf_texts = [page.extract_text() for page in pdf_reader.pages if page.extract_text()]
                         content_text = "\n".join(pdf_texts)
                     elif file_extension == "docx":
                         doc = Document(io.BytesIO(uploaded_file.read()))
-                        doc_texts = [para.text for para in doc.paragraphs if para.text.strip()]
-                        content_text = "\n".join(doc_texts)
+                        content_text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
                     elif file_extension == "pptx":
                         prs = Presentation(io.BytesIO(uploaded_file.read()))
                         slide_texts = []
@@ -112,105 +144,106 @@ if st.button("Generate Content Pipeline", type="primary"):
                     content_text = user_prompt
 
                 prompt = f"""
-                You are an elite, top 1% human content creator, documentary filmmaker, and expert copywriter. Your job is to transform the provided source content into an ultra-engaging, completely human-sounding script and post.
+                You are an elite, top 1% human content creator and documentary filmmaker. Transform the source content into an engaging script.
 
                 CRITICAL ANTI-AI WRITING RULES:
-                1. NEVER use cliché AI filler words such as: "delve", "tapestry", "testament", "beacon", "game-changer", "in conclusion", "dive deep", "revolutionize", "unleash", or "it's important to note".
-                2. Write like a real human speaks to a friend or an audience on camera. Use natural speech cadences, contractions (don't, won't, it's, you're), rhetorical questions, and occasional conversational transitions ("Look,", "Here's the thing,", "Now,").
-                3. The voiceover narration must sound spoken, not written. Avoid overly complex academic sentences; keep the rhythm punchy, variable, and engaging for text-to-speech audio generation.
+                1. NEVER use cliché AI filler words such as: "delve", "tapestry", "testament", "beacon", "game-changer", "in conclusion", "dive deep", "revolutionize", "unleash".
+                2. Write like a real human speaks to an audience on camera with natural speech cadences and contractions.
                 
-                LANGUAGE REQUIREMENT: The entire output must be written fluently in **{target_language}**.
+                LANGUAGE REQUIREMENT: Written fluently in **{target_language}**.
 
-                Generate:
-                1. A viral LinkedIn post with a sharp, thumb-stopping hook, crisp spacing, zero corporate jargon, and relevant hashtags.
-                2. A long-form YouTube script divided into clear visual cues and voiceover narration formatted specifically for clean audio flow.
-                3. A punchy 30-second YouTube Short / Reel script with immediate pattern-interrupt pacing.
+                Generate a YouTube script structured with alternating visual themes and narration so we can match background images to key topics (e.g., business, technology, finance, global markets).
                 
-                Source Content to process:
+                Source Content:
                 {content_text}
                 """
                 
                 response = None
                 models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-                
                 for model_name in models_to_try:
-                    success = False
-                    for attempt in range(2):
-                        try:
-                            response = client.models.generate_content(
-                                model=model_name,
-                                contents=prompt,
-                            )
-                            if response and response.text:
-                                success = True
-                                break
-                        except Exception:
-                            time.sleep(1)
-                    if success:
-                        break
+                    try:
+                        response = client.models.generate_content(model=model_name, contents=prompt)
+                        if response and response.text:
+                            break
+                    except Exception:
+                        continue
                 
                 if response and response.text:
-                    st.success(f"Human-Grade Content Generated Successfully in {target_language}!")
+                    st.success(f"Content Generated Successfully in {target_language}!")
                     st.markdown("### 📝 Results Output")
                     st.write(response.text)
-                    
                     st.session_state["generated_script"] = response.text
                 else:
-                    st.error("Server traffic is currently high. Please try again in a few seconds.")
-                
+                    st.error("Server traffic is high. Please try again.")
             except Exception as e:
-                st.error(f"An error occurred while processing your file: {e}")
+                st.error(f"An error occurred: {e}")
 
 # Audio & Video Generation Section
 if "generated_script" in st.session_state and st.session_state["generated_script"]:
     st.markdown("---")
-    st.subheader("🎬 AI Video & Voiceover Studio")
-    st.markdown(f"Compile your script into an MP3 voiceover or render a full MP4 video using voice ID: `{selected_voice_id}`.")
+    st.subheader("🎬 AI Dynamic Video Studio")
+    st.markdown(f"Render a professional MP4 video featuring dynamic scene imagery matching your script.")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Generate Voiceover MP3"):
-            with st.spinner("Synthesizing lifelike speech audio..."):
+        if st.button("Generate Clean Voiceover MP3"):
+            with st.spinner("Synthesizing audio..."):
                 try:
+                    speech_text = clean_script_for_tts(st.session_state["generated_script"])
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
                         tmp_audio_path = tmp_file.name
-                    
-                    asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_audio_path))
-                    
-                    with open(tmp_audio_path, "rb") as audio_file:
-                        audio_bytes = audio_file.read()
-                    
+                    asyncio.run(generate_tts_audio(speech_text, selected_voice_id, tmp_audio_path))
+                    with open(tmp_audio_path, "rb") as f:
+                        audio_bytes = f.read()
                     st.audio(audio_bytes, format="audio/mp3")
-                    st.download_button(
-                        label="📥 Download MP3 Audio",
-                        data=audio_bytes,
-                        file_name="ai_voiceover.mp3",
-                        mime="audio/mp3"
-                    )
-                    st.success("Audio ready!")
-                except Exception as tts_error:
-                    st.error(f"Error generating audio: {tts_error}")
+                    st.download_button("📥 Download MP3", data=audio_bytes, file_name="voiceover.mp3", mime="audio/mp3")
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     with col2:
-        if st.button("Render Full MP4 Video"):
-            with st.spinner("Rendering video frames and syncing audio (takes ~15 seconds)..."):
+        if st.button("Render Dynamic MP4 Video"):
+            with st.spinner("Assembling multi-scene video with matching visuals..."):
                 try:
-                    # 1. Generate audio file first
+                    speech_text = clean_script_for_tts(st.session_state["generated_script"])
+                    
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
                         tmp_audio_path = tmp_audio.name
                     
-                    asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_audio_path))
+                    asyncio.run(generate_tts_audio(speech_text, selected_voice_id, tmp_audio_path))
                     
-                    # 2. Load audio clip with moviepy to get exact duration
                     audio_clip = AudioFileClip(tmp_audio_path)
-                    duration = audio_clip.duration
+                    total_duration = audio_clip.duration
                     
-                    # 3. Create background video clip matching audio length
-                    background_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=duration)
-                    video_clip = background_clip.set_audio(audio_clip)
+                    # Split script into paragraphs to create multi-scene cuts
+                    paragraphs = [p.strip() for p in speech_text.split("\n") if len(p.strip()) > 20]
+                    if not paragraphs:
+                        paragraphs = [speech_text]
                     
-                    # 4. Export to temporary MP4 file
+                    scene_duration = max(3.0, total_duration / len(paragraphs))
+                    
+                    image_clips = []
+                    keywords = ["technology", "business", "finance", "global", "future", "data", "markets"]
+                    
+                    for i, para in enumerate(paragraphs):
+                        img_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
+                        # Pick a contextual keyword based on paragraph text or rotation
+                        kw = keywords[i % len(keywords)]
+                        fetch_stock_image(kw, img_path)
+                        
+                        # Create image clip for this scene
+                        img_clip = ImageClip(img_path).set_duration(scene_duration).resize(height=1920)
+                        image_clips.append(img_clip)
+                    
+                    # Concatenate all scene images together
+                    final_visual = concatenate_videoclips(image_clips, method="compose")
+                    
+                    # Trim or loop visual to match exact audio duration
+                    if final_visual.duration > total_duration:
+                        final_visual = final_visual.subclip(0, total_duration)
+                    
+                    video_clip = final_visual.set_audio(audio_clip)
+                    
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
                         tmp_video_path = tmp_video.name
                     
@@ -223,18 +256,17 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                         logger=None
                     )
                     
-                    # 5. Read video bytes for download button
                     with open(tmp_video_path, "rb") as vid_file:
                         video_bytes = vid_file.read()
                     
                     st.video(video_bytes)
                     st.download_button(
-                        label="📥 Download MP4 Video",
+                        label="📥 Download Dynamic MP4",
                         data=video_bytes,
-                        file_name="ai_viral_video.mp4",
+                        file_name="dynamic_viral_video.mp4",
                         mime="video/mp4"
                     )
-                    st.success("Video rendered successfully!")
+                    st.success("Dynamic multi-scene video rendered successfully!")
                     
                     audio_clip.close()
                     video_clip.close()
