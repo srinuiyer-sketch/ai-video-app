@@ -11,6 +11,12 @@ import tempfile
 import os
 import re
 import requests
+
+# --- PIL COMPATIBILITY PATCH FOR MOVIEPY ---
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
+
 from moviepy.editor import AudioFileClip, ImageClip, concatenate_videoclips
 
 # Page configuration
@@ -78,11 +84,9 @@ def clean_script_for_tts(raw_text):
     cleaned = "\n".join([line.strip() for line in cleaned.splitlines() if line.strip()])
     return cleaned
 
-# Helper function to fetch a relevant stock image based on search keywords
+# Helper function to fetch a stock image based on search keywords
 def fetch_stock_image(keyword, output_path):
     try:
-        # Use Picsum Photos with deterministic seed based on keyword for contextual variety, 
-        # or fallback to a reliable curated tech/business image stream
         seed_val = abs(hash(keyword)) % 1000
         img_url = f"https://picsum.photos/seed/{seed_val}/1080/1920"
         response = requests.get(img_url, timeout=5)
@@ -93,7 +97,6 @@ def fetch_stock_image(keyword, output_path):
     except Exception:
         pass
     
-    # Absolute fallback image if request fails
     fallback_url = "https://picsum.photos/1080/1920"
     try:
         res = requests.get(fallback_url, timeout=5)
@@ -152,7 +155,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                 
                 LANGUAGE REQUIREMENT: Written fluently in **{target_language}**.
 
-                Generate a YouTube script structured with alternating visual themes and narration so we can match background images to key topics (e.g., business, technology, finance, global markets).
+                Generate a YouTube script structured with alternating visual themes and narration so we can match background images to key topics.
                 
                 Source Content:
                 {content_text}
@@ -215,7 +218,6 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     audio_clip = AudioFileClip(tmp_audio_path)
                     total_duration = audio_clip.duration
                     
-                    # Split script into paragraphs to create multi-scene cuts
                     paragraphs = [p.strip() for p in speech_text.split("\n") if len(p.strip()) > 20]
                     if not paragraphs:
                         paragraphs = [speech_text]
@@ -227,18 +229,14 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     
                     for i, para in enumerate(paragraphs):
                         img_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-                        # Pick a contextual keyword based on paragraph text or rotation
                         kw = keywords[i % len(keywords)]
                         fetch_stock_image(kw, img_path)
                         
-                        # Create image clip for this scene
                         img_clip = ImageClip(img_path).set_duration(scene_duration).resize(height=1920)
                         image_clips.append(img_clip)
                     
-                    # Concatenate all scene images together
                     final_visual = concatenate_videoclips(image_clips, method="compose")
                     
-                    # Trim or loop visual to match exact audio duration
                     if final_visual.duration > total_duration:
                         final_visual = final_visual.subclip(0, total_duration)
                     
