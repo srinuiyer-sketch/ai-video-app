@@ -8,6 +8,8 @@ import time
 import asyncio
 import edge_tts
 import tempfile
+import os
+from moviepy.editor import AudioFileClip, ColorClip
 
 # Page configuration
 st.set_page_config(
@@ -17,7 +19,7 @@ st.set_page_config(
 )
 
 st.title("🚀 AI Multi-Format Content & Video Engine")
-st.markdown("Upload any document or notes to generate human-grade video scripts, posts, and downloadable audio voiceovers.")
+st.markdown("Upload any document or notes to generate human-grade scripts, downloadable voiceovers, and complete MP4 videos.")
 
 # Automatically fetch API key from Streamlit Cloud Secrets securely
 try:
@@ -128,7 +130,6 @@ if st.button("Generate Content Pipeline", type="primary"):
                 {content_text}
                 """
                 
-                # Updated high-capacity production model rotation
                 response = None
                 models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
                 
@@ -153,7 +154,6 @@ if st.button("Generate Content Pipeline", type="primary"):
                     st.markdown("### 📝 Results Output")
                     st.write(response.text)
                     
-                    # Save generated text into session state for audio generation
                     st.session_state["generated_script"] = response.text
                 else:
                     st.error("Server traffic is currently high. Please try again in a few seconds.")
@@ -161,33 +161,85 @@ if st.button("Generate Content Pipeline", type="primary"):
             except Exception as e:
                 st.error(f"An error occurred while processing your file: {e}")
 
-# If content has been generated, provide an audio generation section
+# Audio & Video Generation Section
 if "generated_script" in st.session_state and st.session_state["generated_script"]:
     st.markdown("---")
-    st.subheader("🎙️ Voiceover Audio Generator")
-    st.markdown(f"Convert your script narration into a realistic MP3 voiceover using voice ID: `{selected_voice_id}`.")
+    st.subheader("🎬 AI Video & Voiceover Studio")
+    st.markdown(f"Compile your script into an MP3 voiceover or render a full MP4 video using voice ID: `{selected_voice_id}`.")
     
-    if st.button("Generate & Download Voiceover MP3"):
-        with st.spinner("Synthesizing lifelike speech audio..."):
-            try:
-                # Create a temporary file to store the audio
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-                    tmp_path = tmp_file.name
-                
-                # Run edge-tts to generate the audio file
-                asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_path))
-                
-                # Read audio bytes for player and download button
-                with open(tmp_path, "rb") as audio_file:
-                    audio_bytes = audio_file.read()
-                
-                st.audio(audio_bytes, format="audio/mp3")
-                st.download_button(
-                    label="📥 Download Voiceover (.mp3)",
-                    data=audio_bytes,
-                    file_name="ai_voiceover.mp3",
-                    mime="audio/mp3"
-                )
-                st.success("Voiceover generated successfully!")
-            except Exception as tts_error:
-                st.error(f"Error generating audio: {tts_error}")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("Generate Voiceover MP3"):
+            with st.spinner("Synthesizing lifelike speech audio..."):
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                        tmp_audio_path = tmp_file.name
+                    
+                    asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_audio_path))
+                    
+                    with open(tmp_audio_path, "rb") as audio_file:
+                        audio_bytes = audio_file.read()
+                    
+                    st.audio(audio_bytes, format="audio/mp3")
+                    st.download_button(
+                        label="📥 Download MP3 Audio",
+                        data=audio_bytes,
+                        file_name="ai_voiceover.mp3",
+                        mime="audio/mp3"
+                    )
+                    st.success("Audio ready!")
+                except Exception as tts_error:
+                    st.error(f"Error generating audio: {tts_error}")
+
+    with col2:
+        if st.button("Render Full MP4 Video"):
+            with st.spinner("Rendering video frames and syncing audio (takes ~15 seconds)..."):
+                try:
+                    # 1. Generate audio file first
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+                        tmp_audio_path = tmp_audio.name
+                    
+                    asyncio.run(generate_tts_audio(st.session_state["generated_script"], selected_voice_id, tmp_audio_path))
+                    
+                    # 2. Load audio clip with moviepy to get exact duration
+                    audio_clip = AudioFileClip(tmp_audio_path)
+                    duration = audio_clip.duration
+                    
+                    # 3. Create a professional dark cinematic background video clip matching the audio length
+                    # Resolution set to vertical 1080x1920 for YouTube Shorts / Reels (or standard widescreen 1920x1080)
+                    background_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=duration)
+                    video_clip = background_clip.set_audio(audio_clip)
+                    
+                    # 4. Export to temporary MP4 file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video:
+                        tmp_video_path = tmp_video.name
+                    
+                    video_clip.write_videofile(
+                        tmp_video_path,
+                        fps=24,
+                        codec="libx264",
+                        audio_codec="aac",
+                        preset="ultrafast",
+                        logger=None
+                    )
+                    
+                    # 5. Read video bytes for download button
+                    with open(tmp_video_path, "rb") as vid_file:
+                        video_bytes = vid_file.read()
+                    
+                    st.video(video_bytes)
+                    st.download_button(
+                        label="📥 Download MP4 Video",
+                        data=video_bytes,
+                        file_name="ai_viral_video.mp4",
+                        mime="video/mp4"
+                    )
+                    st.success("Video rendered successfully!")
+                    
+                    # Close clips to free resources
+                    audio_clip.close()
+                    video_clip.close()
+                    
+                except Exception as vid_error:
+                    st.error(f"Error rendering video: {vid_error}")
