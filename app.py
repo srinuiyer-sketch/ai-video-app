@@ -206,8 +206,7 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     audio_clip = AudioFileClip(tmp_audio_path)
                     duration = audio_clip.duration
                     
-                    # 3. Create a professional dark cinematic background video clip matching the audio length
-                    # Resolution set to vertical 1080x1920 for YouTube Shorts / Reels (or standard widescreen 1920x1080)
+                    # 3. Create background video clip matching audio length
                     background_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=duration)
                     video_clip = background_clip.set_audio(audio_clip)
                     
@@ -237,7 +236,6 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     )
                     st.success("Video rendered successfully!")
                     
-                    # Close clips to free resources
                     audio_clip.close()
                     video_clip.close()
                     
