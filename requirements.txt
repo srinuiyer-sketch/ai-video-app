@@ -2,6 +2,8 @@ streamlit
 google-genai
 edge-tts
 moviepy==1.0.3
+Pillow==9.5.0
 python-pptx
 PyPDF2
 python-docx
+requests
