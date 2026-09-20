@@ -128,13 +128,13 @@ if st.button("Generate Content Pipeline", type="primary"):
                 {content_text}
                 """
                 
-                # Robust Retry & Fallback Loop (Handles 503 traffic spikes automatically)
+                # Use gemini-2.0-flash as the primary production-stable model
                 response = None
-                models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+                models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
                 
                 for model_name in models_to_try:
                     success = False
-                    for attempt in range(3):  # Try each model up to 3 times with a short pause
+                    for attempt in range(2):
                         try:
                             response = client.models.generate_content(
                                 model=model_name,
@@ -144,7 +144,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                                 success = True
                                 break
                         except Exception:
-                            time.sleep(2)  # Wait 2 seconds before retrying
+                            time.sleep(1.5)
                     if success:
                         break
                 
@@ -156,7 +156,7 @@ if st.button("Generate Content Pipeline", type="primary"):
                     # Save generated text into session state for audio generation
                     st.session_state["generated_script"] = response.text
                 else:
-                    st.error("Server traffic is currently high. Please click 'Generate Content Pipeline' again in 5 seconds.")
+                    st.error("Server traffic is currently high on Google's free tier. Please try again in a few seconds.")
                 
             except Exception as e:
                 st.error(f"An error occurred while processing your file: {e}")
