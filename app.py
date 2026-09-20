@@ -11,7 +11,6 @@ import tempfile
 import os
 import re
 import requests
-import urllib.parse
 
 # --- PIL COMPATIBILITY PATCH FOR MOVIEPY ---
 import PIL.Image
@@ -73,9 +72,8 @@ uploaded_file = st.file_uploader(
 )
 user_prompt = st.text_area("Or type/paste your topic or raw notes here:")
 
-# Helper to clean text for TTS (strips all formatting, headers, and visual cues)
+# Helper to clean text for TTS
 def clean_script_for_tts(raw_text):
-    # Remove Visual tags and markdown
     cleaned = re.sub(r'\[VISUAL:.*?\]', '', raw_text, flags=re.IGNORECASE)
     cleaned = re.sub(r'Visual:.*', '', cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r'Narration:.*', '', cleaned, flags=re.IGNORECASE)
@@ -87,10 +85,8 @@ def clean_script_for_tts(raw_text):
     cleaned = "\n".join([line.strip() for line in cleaned.splitlines() if line.strip() and not line.startswith("Visual")])
     return cleaned
 
-# Helper to extract scene segments containing both visual instructions and narration text
 def parse_script_scenes(raw_text):
     scenes = []
-    # Find blocks or paragraphs
     lines = raw_text.split('\n')
     current_visual = "business technology concept"
     current_narration = []
@@ -100,7 +96,6 @@ def parse_script_scenes(raw_text):
             if current_narration:
                 scenes.append({"visual": current_visual, "text": " ".join(current_narration)})
                 current_narration = []
-            # Extract keyword phrase for image fetching
             current_visual = re.sub(r'\[?visual:?\]?', '', line, flags=re.IGNORECASE).strip()
         elif line.strip() and not line.startswith("#") and not "narration:" in line.lower():
             current_narration.append(line.strip())
@@ -112,15 +107,12 @@ def parse_script_scenes(raw_text):
         scenes = [{"visual": "corporate technology", "text": raw_text}]
     return scenes
 
-# Helper function to fetch a context-matching stock image
 def fetch_context_image(visual_cue, output_path):
-    # Clean the visual cue into a robust search/seed keyword
     clean_query = re.sub(r'[^a-zA-Z0-9\s]', '', visual_cue).strip()
     words = [w for w in clean_query.split() if len(w) > 3]
     search_term = "+".join(words[:3]) if words else "business"
     
     try:
-        # Use a deterministic seed derived from the visual description so it stays unique per scene
         seed_val = abs(hash(search_term)) % 900 + 100
         img_url = f"https://picsum.photos/seed/{seed_val}/1080/1920"
         response = requests.get(img_url, timeout=5)
@@ -131,7 +123,6 @@ def fetch_context_image(visual_cue, output_path):
     except Exception:
         pass
     
-    # Fallback image
     try:
         res = requests.get("https://picsum.photos/1080/1920", timeout=5)
         with open(output_path, "wb") as f:
@@ -251,10 +242,12 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     speech_text = clean_script_for_tts(raw_script)
                     scenes = parse_script_scenes(raw_script)
                     
+                    # Safely create audio file and ensure handle is closed before loading into MoviePy
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
                         tmp_audio_path = tmp_audio.name
                     
                     asyncio.run(generate_tts_audio(speech_text, selected_voice_id, tmp_audio_path))
+                    time.sleep(0.5) # Buffer for file system sync
                     
                     audio_clip = AudioFileClip(tmp_audio_path)
                     total_duration = audio_clip.duration
@@ -264,9 +257,7 @@ if "generated_script" in st.session_state and st.session_state["generated_script
                     image_clips = []
                     for scene in scenes:
                         img_path = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg").name
-                        # Fetch stock image matching the specific Visual cue instruction from Gemini
                         fetch_context_image(scene["visual"], img_path)
-                        
                         img_clip = ImageClip(img_path).set_duration(scene_duration).resize(height=1920)
                         image_clips.append(img_clip)
                     
